@@ -1,0 +1,264 @@
+export AWS_REGION=ap-south-1
+export TF_BUCKET=stage-btl-platform-main-repo-backend-tfstate-592776312448
+export TF_LOCK_TABLE=platform-main-state-lock
+export TF_STATE_PREFIX=stage/idlms-app
+
+cd ~/Desktop/idlms-app/infra/security-group
+terraform init -reconfigure \
+  -backend-config="bucket=$TF_BUCKET" \
+  -backend-config="key=$TF_STATE_PREFIX/security-group/terraform.tfstate" \
+  -backend-config="region=$AWS_REGION" \
+  -backend-config="dynamodb_table=$TF_LOCK_TABLE"
+terraform destroy -auto-approve -var-file="stage.tfvars"
+
+cd ../nlb
+terraform init -reconfigure \
+  -backend-config="bucket=$TF_BUCKET" \
+  -backend-config="key=$TF_STATE_PREFIX/nlb/terraform.tfstate" \
+  -backend-config="region=$AWS_REGION" \
+  -backend-config="dynamodb_table=$TF_LOCK_TABLE"
+terraform destroy -auto-approve -var-file="stage.tfvars"
+
+cd ~/Desktop/idlms-app/infra/rest-api
+terraform init -reconfigure \
+  -backend-config="bucket=$TF_BUCKET" \
+  -backend-config="key=$TF_STATE_PREFIX/rest-api/terraform.tfstate" \
+  -backend-config="region=$AWS_REGION" \
+  -backend-config="dynamodb_table=$TF_LOCK_TABLE"
+terraform destroy -auto-approve -var-file="stage.tfvars"
+
+cd ../ecr
+terraform init -reconfigure \
+  -backend-config="bucket=$TF_BUCKET" \
+  -backend-config="key=$TF_STATE_PREFIX/ecr/terraform.tfstate" \
+  -backend-config="region=$AWS_REGION" \
+  -backend-config="dynamodb_table=$TF_LOCK_TABLE"
+terraform destroy -auto-approve -var-file="stage.tfvars"
+
+cd ../cloudwatch
+terraform init -reconfigure \
+  -backend-config="bucket=$TF_BUCKET" \
+  -backend-config="key=$TF_STATE_PREFIX/cloudwatch/terraform.tfstate" \
+  -backend-config="region=$AWS_REGION" \
+  -backend-config="dynamodb_table=$TF_LOCK_TABLE"
+terraform destroy -auto-approve -var-file="stage.tfvars"
+
+
+
+$ sudo su
+root@ip-10-10-10-204:/var/snap/amazon-ssm-agent/11797# cd
+root@ip-10-10-10-204:~# cd /opt/stage/idlms-app/
+root@ip-10-10-10-204:/opt/stage/idlms-app# ll
+total 16
+drwxr-xr-x 2 root root 4096 Oct 14 06:17 ./
+drwxr-xr-x 3 root root 4096 Oct 14 06:07 ../
+-rw-r--r-- 1 root root  430 Oct 14 06:17 .env
+-rw-r--r-- 1 root root  522 Oct 14 06:17 docker-compose.yml
+root@ip-10-10-10-204:/opt/stage/idlms-app# cat .env
+# App
+PORT=4000
+NODE_ENV=production
+ENV=stage
+AWS_REGION=ap-south-1
+
+# Postgres (RDS)
+DB_HOST=idlms-app-db.cl4cao400fe2.ap-south-1.rds.amazonaws.com
+DB_PORT=5432
+DB_USER=test_db
+DB_PASSWORD=strong-password
+DB_NAME=idlms_app_db
+
+# Some builds expect these as well:
+DB_USERNAME=test_db
+DB_SSL=true
+DB_SSL_REJECT_UNAUTHORIZED=false
+BUILD_TAG=2025.10.14.061507
+IMAGE_REPO=592776312448.dkr.ecr.ap-south-1.amazonaws.com/stage-idlms-app
+
+
+
+root@ip-10-10-10-204:/opt/stage/idlms-app# apt-get update
+apt-get install -y postgresql-client
+Hit:1 http://ap-south-1.ec2.archive.ubuntu.com/ubuntu noble InRelease
+Hit:2 http://ap-south-1.ec2.archive.ubuntu.com/ubuntu noble-updates InRelease
+Hit:3 http://ap-south-1.ec2.archive.ubuntu.com/ubuntu noble-backports InRelease
+Hit:4 http://security.ubuntu.com/ubuntu noble-security InRelease
+Reading package lists... Done
+Reading package lists... Done
+Building dependency tree... Done
+Reading state information... Done
+postgresql-client is already the newest version (16+257build1.1).
+0 upgraded, 0 newly installed, 0 to remove and 52 not upgraded.
+
+
+
+root@ip-10-10-10-204:/opt/stage/idlms-app# grep -E '^(ENV|NODE_ENV|AWS_REGION|DB_HOST|DB_USER|DB_NAME|IMAGE_REPO|BUILD_TAG)=' .env
+NODE_ENV=production
+ENV=stage
+AWS_REGION=ap-south-1
+DB_HOST=idlms-app-db.cl4cao400fe2.ap-south-1.rds.amazonaws.com
+DB_USER=test_db
+DB_NAME=idlms_app_db
+BUILD_TAG=2025.10.14.061507
+IMAGE_REPO=592776312448.dkr.ecr.ap-south-1.amazonaws.com/stage-idlms-app
+root@ip-10-10-10-204:/opt/stage/idlms-app# ^C
+nc -vz -w 5 <DB_HOST> 5432
+
+root@ip-10-10-10-204:/opt/stage/idlms-app# getent hosts idlms-app-db.cl4cao400fe2.ap-south-1.rds.amazonaws.com
+nc -vz -w 5 idlms-app-db.cl4cao400fe2.ap-south-1.rds.amazonaws.com 5432
+10.10.1.70      idlms-app-db.cl4cao400fe2.ap-south-1.rds.amazonaws.com
+Connection to idlms-app-db.cl4cao400fe2.ap-south-1.rds.amazonaws.com (10.10.1.70) 5432 port [tcp/postgresql] succeeded!
+
+
+
+root@ip-10-10-10-204:/opt/stage/idlms-app# psql -h idlms-app-db.cl4cao400fe2.ap-south-1.rds.amazonaws.com -U test_db -d postgres -p 5432 <<'SQL'
+CREATE DATABASE idlms_app_db OWNER test_db;
+\l
+SQL
+Password for user test_db:
+ERROR:  database "idlms_app_db" already exists
+                                                         List of databases
+     Name     |  Owner   | Encoding | Locale Provider |   Collate   |    Ctype    | ICU Locale | ICU Rules |   Access privileges
+--------------+----------+----------+-----------------+-------------+-------------+------------+-----------+-----------------------
+ idlms_app_db | test_db  | UTF8     | libc            | en_US.UTF-8 | en_US.UTF-8 |            |           |
+ postgres     | test_db  | UTF8     | libc            | en_US.UTF-8 | en_US.UTF-8 |            |           |
+ rdsadmin     | rdsadmin | UTF8     | libc            | en_US.UTF-8 | en_US.UTF-8 |            |           | rdsadmin=CTc/rdsadmin
+ template0    | rdsadmin | UTF8     | libc            | en_US.UTF-8 | en_US.UTF-8 |            |           | =c/rdsadmin          +
+              |          |          |                 |             |             |            |           | rdsadmin=CTc/rdsadmin
+ template1    | test_db  | UTF8     | libc            | en_US.UTF-8 | en_US.UTF-8 |            |           | =c/test_db           +
+              |          |          |                 |             |             |            |           | test_db=CTc/test_db
+(5 rows)
+
+
+root@ip-10-10-10-204:/opt/stage/idlms-app# # (Optional) ECR login if needed (instance may already have permission)
+aws ecr get-login-password --region ap-south-1 | \
+  docker login --username AWS --password-stdin 592776312448.dkr.ecr.ap-south-1.amazonaws.com
+
+# Pull and start
+docker compose --env-file .env pull
+docker compose --env-file .env up -d
+
+# Live logs
+docker logs -f api1
+
+WARNING! Your credentials are stored unencrypted in '/root/.docker/config.json'.
+Configure a credential helper to remove this warning. See
+https://docs.docker.com/go/credential-store/
+
+Login Succeeded
+WARN[0000] /opt/stage/idlms-app/docker-compose.yml: `version` is obsolete
+[+] Pulling 1/1
+ ✔ api1 Pulled                                                                                                                                                                                                0.1s
+WARN[0000] /opt/stage/idlms-app/docker-compose.yml: `version` is obsolete
+[+] Running 1/0
+ ✔ Container api1  Running                                                                                                                                                                                    0.0s
+[Nest] 1  - 10/14/2025, 6:17:58 AM     LOG [NestFactory] Starting Nest application...
+
+
+^Croot@ip-10-10-10-204:/opt/stage/idlms-app#
+root@ip-10-10-10-204:/opt/stage/idlms-app#
+root@ip-10-10-10-204:/opt/stage/idlms-app#
+root@ip-10-10-10-204:/opt/stage/idlms-app#
+root@ip-10-10-10-204:/opt/stage/idlms-app# psql -h idlms-app-db.cl4cao400fe2.ap-south-1.rds.amazonaws.com -U test_db -d idlms_app_db -p 5432 -c '\dt'
+Password for user test_db:
+                       List of relations
+ Schema |                Name                | Type  |  Owner
+--------+------------------------------------+-------+---------
+ public | api_clients                        | table | test_db
+ public | applicant_files                    | table | test_db
+ public | audit_trails                       | table | test_db
+ public | cbt_centers                        | table | test_db
+ public | cbt_schedules                      | table | test_db
+ public | devices                            | table | test_db
+ public | driving_school_application_queries | table | test_db
+ public | driving_school_applications        | table | test_db
+ public | driving_school_instructors         | table | test_db
+ public | driving_schools                    | table | test_db
+ public | driving_test_centers               | table | test_db
+ public | driving_test_schedules             | table | test_db
+ public | email_notifications                | table | test_db
+ public | files                              | table | test_db
+ public | inspection_questions               | table | test_db
+ public | inspections                        | table | test_db
+ public | license_files                      | table | test_db
+ public | licenses                           | table | test_db
+ public | migrations                         | table | test_db
+ public | mvaa_offices                       | table | test_db
+ public | nodes                              | table | test_db
+ public | otps                               | table | test_db
+ public | payment_settings                   | table | test_db
+ public | permits                            | table | test_db
+ public | pre_registrations                  | table | test_db
+ public | questions                          | table | test_db
+ public | students                           | table | test_db
+ public | test_nins                          | table | test_db
+ public | training_durations                 | table | test_db
+ public | transactions                       | table | test_db
+ public | users                              | table | test_db
+(31 rows)
+
+root@ip-10-10-10-204:/opt/stage/idlms-app#
+root@ip-10-10-10-204:/opt/stage/idlms-app# # Create bcrypt hashes for the 4 passwords
+HASH1=$(docker exec -i api1 node -e "console.log(require('bcryptjs').hashSync('AdminTwo@123',10))")
+HASH2=$(docker exec -i api1 node -e "console.log(require('bcryptjs').hashSync('QAAdmin@123',10))")
+HASH3=$(docker exec -i api1 node -e "console.log(require('bcryptjs').hashSync('Support@123',10))")
+HASH4=$(docker exec -i api1 node -e "console.log(require('bcryptjs').hashSync('NewP@ssw0rd',10))")
+
+# Insert (schema-correct columns)
+psql -h idlms-app-db.cl4cao400fe2.ap-south-1.rds.amazonaws.com -U test_db -d idlms_app_db -p 5432 <<SQL
+INSERT INTO users
+(first_name, last_name, phone, email, password, is_active, role_name, created_at, updated_at)
+VALUES
+('Admin','Two','0000000001','admin.two@mailinator.com','${HASH1}',1,'admin',NOW(),NOW()),
+('QA','Admin','0000000002','qa.admin@mailinator.com','${HASH2}',1,'admin',NOW(),NOW()),
+('Support','Admin','0000000003','support.admin@mailinator.com','${HASH3}',1,'admin',NOW(),NOW()),
+('Lasdri','Admin','0000000004','lasdri.admin@mailinator.com','${HASH4}',1,'admin',NOW(),NOW())
+ON CONFLICT (email) DO NOTHING;
+SQL
+
+# Verify
+psql -h idlms-app-db.cl4cao400fe2.ap-south-1.rds.amazonaws.com -U test_db -d idlms_app_db -p 5432 \
+  -c "SELECT id,email,is_active,role_name FROM users WHERE email LIKE '%mailinator.com';"
+Password for user test_db:
+INSERT 0 0
+Password for user test_db:
+ id |            email             | is_active | role_name
+----+------------------------------+-----------+-----------
+  1 | admin.two@mailinator.com     |         1 | admin
+  2 | qa.admin@mailinator.com      |         1 | admin
+  3 | support.admin@mailinator.com |         1 | admin
+  4 | lasdri.admin@mailinator.com  |         1 | admin
+(4 rows)
+
+root@ip-10-10-10-204:/opt/stage/idlms-app# curl -i -X POST "https://3iik4mjrqd.execute-api.ap-south-1.amazonaws.com/stage/idlms-app/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin.two@mailinator.com","password":"AdminTwo@123"}'
+HTTP/2 201
+date: Tue, 14 Oct 2025 06:25:57 GMT
+content-type: application/json; charset=utf-8
+content-length: 1333
+x-amzn-requestid: 5d6a6bc0-1582-4f12-8a00-bd5fdeb4355d
+x-dns-prefetch-control: off
+referrer-policy: no-referrer
+x-permitted-cross-domain-policies: none
+x-xss-protection: 0
+strict-transport-security: max-age=31536000; includeSubDomains; preload
+x-amzn-remapped-content-length: 1333
+x-frame-options: SAMEORIGIN
+origin-agent-cluster: ?1
+x-amzn-remapped-connection: keep-alive
+cross-origin-opener-policy: same-origin
+x-download-options: noopen
+x-amz-apigw-id: SbH2XF5yBcwEB1g=
+vary: Origin
+x-content-type-options: nosniff
+etag: W/"535-fK+NBR5kXxvC1SsWpDk+AvjkMiM"
+cross-origin-resource-policy: same-origin
+x-amzn-remapped-date: Tue, 14 Oct 2025 06:25:57 GMT
+
+{"success":true,"message":"Welcome","user":{"id":1,"firstName":"Admin","middleName":null,"lastName":"Two","phone":"0000000001","email":"admin.two@mailinator.com","avatar":null,"address":null,"stateId":null,"lgaId":null,"drivingSchoolId":null,"roleId":null,"roleName":"admin","changePasswordNextLogin":0,"device":null,"lastPasswordChange":"2025-10-14T05:40:21.545Z","isActive":1,"files":null,"permissions":null,"createdAt":"2025-10-14T05:40:21.545Z","updatedAt":"2025-10-14T05:40:21.545Z","node":null},"accessToken":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiZmlyc3ROYW1lIjoiQWRtaW4iLCJtaWRkbGVOYW1lIjpudWxsLCJsYXN0TmFtZSI6IlR3byIsInBob25lIjoiMDAwMDAwMDAwMSIsImVtYWlsIjoiYWRtaW4udHdvQG1haWxpbmF0b3IuY29tIiwiYXZhdGFyIjpudWxsLCJhZGRyZXNzIjpudWxsLCJzdGF0ZUlkIjpudWxsLCJsZ2FJZCI6bnVsbCwiZHJpdmluZ1NjaG9vbElkIjpudWxsLCJyb2xlSWQiOm51bGwsInJvbGVOYW1lIjoiYWRtaW4iLCJjaGFuZ2VQYXNzd29yZE5leHRMb2dpbiI6MCwiZGV2aWNlIjpudWxsLCJsYXN0UGFzc3dvcmRDaGFuZ2UiOiIyMDI1LTEwLTE0VDA1OjQwOjIxLjU0NVoiLCJpc0FjdGl2ZSI6MSwiZmlsZXMiOm51bGwsImFjY2Vzc1Rva2VuIjpudWxsLCJwZXJtaXNzaW9ucyI6bnVsbCwiY3JlYXRlZEF0IjoiMjAyNS0xMC0xNFQwNTo0MDoyMS41NDVaIiwidXBkYXRlZEF0IjoiMjAyNS0xMC0xNFQwNTo0MDoyMS41NDVaIiwibm9kZSI6bnVsbCwiaWF0IjoxNzYwNDIzMTU3LCJleHAiOjE3NjA1MDk1NTd9.dLa4TtUbXRU25_Mg6CxovofEjTeRuyCaPPhzwXey26E","expires":"2025-10-15T06:25:57.000Z","biometric":null}root@ip-10-10-10-204:/opt/stage/idlms-app#
+
+
+curl -i -X POST http://127.0.0.1:4000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin.two@mailinator.com","password":"AdminTwo@123"}'

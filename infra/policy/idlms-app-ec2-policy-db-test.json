@@ -1,0 +1,116 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "SsmParamReadScoped",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:GetParameter",
+                "ssm:GetParameters",
+                "ssm:GetParametersByPath"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "RDSInstRead",
+            "Effect": "Allow",
+            "Action": [
+                "rds:DescribeDBInstances",
+                "rds:DescribeDBClusters"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ArtifactsListBucket",
+            "Effect": "Allow",
+            "Action": "s3:ListBucket",
+            "Resource": "arn:aws:s3:::db-test-btl-platform-main-repo-artifact-bucket-592776312448",
+            "Condition": {
+                "StringLike": {
+                    "s3:prefix": [
+                        "idlms-app/*",
+                        "idlms-app"
+                    ]
+                }
+            }
+        },
+        {
+            "Sid": "ArtifactsGetObjects",
+            "Effect": "Allow",
+            "Action": "s3:GetObject",
+            "Resource": "arn:aws:s3:::db-test-btl-platform-main-repo-artifact-bucket-592776312448/idlms-app/*"
+        },
+        {
+            "Sid": "EcrAuthTokenGlobal",
+            "Effect": "Allow",
+            "Action": "ecr:GetAuthorizationToken",
+            "Resource": "*"
+        },
+        {
+            "Sid": "EcrPullRepoScoped",
+            "Effect": "Allow",
+            "Action": [
+                "ecr:BatchGetImage",
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:BatchCheckLayerAvailability"
+            ],
+            "Resource": "arn:aws:ecr:us-east-1:592776312448:repository/db-test-idlms-app"
+        },
+        {
+            "Sid": "CWLogsDescribeAndTail",
+            "Effect": "Allow",
+            "Action": [
+                "logs:DescribeLogGroups",
+                "logs:DescribeLogStreams",
+                "logs:GetLogEvents",
+                "logs:FilterLogEvents",
+                "logs:DescribeResourcePolicies"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "CWLogsWriteAppGroup",
+            "Effect": "Allow",
+            "Action": [
+                "logs:CreateLogGroup",
+                "logs:PutRetentionPolicy",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "Ec2SgIngressChangeDbOnly",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:AuthorizeSecurityGroupIngress",
+                "ec2:RevokeSecurityGroupIngress"
+            ],
+            "Resource": "arn:aws:ec2:us-east-1:592776312448:security-group/*"
+        },
+        {
+            "Sid": "SecretsReadRdsSpecific",
+            "Effect": "Allow",
+            "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret"
+            ],
+            "Resource": [
+                "arn:aws:secretsmanager:us-east-1:592776312448:secret:db-test-idlms-shared-rds-master-password-*",
+                "arn:aws:secretsmanager:us-east-1:592776312448:secret:db-test-idlms-shared-rds-idlms-app-db-user-password-*",
+                "arn:aws:secretsmanager:us-east-1:592776312448:secret:db-test-idlms-shared-rds-idlms-app-lambda-db-user-password-*"
+            ]
+        },
+        {
+            "Sid": "Ec2DescribeForSgOps",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:DescribeSecurityGroups",
+                "ec2:DescribeVpcs",
+                "ec2:DescribeSubnets",
+                "ec2:DescribeNetworkInterfaces"
+            ],
+            "Resource": "*"
+        }
+    ]
+}

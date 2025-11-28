@@ -1,0 +1,155 @@
+name: "idlms-app-lambda deploy"
+
+on:
+  workflow_dispatch:
+    inputs:
+      ENV:
+        description: "Environment (dev/stage/prod/db-test)"
+        required: true
+        default: "db-test"
+      BRANCH:
+        description: "Git ref (branch/tag)"
+        required: true
+        default: "feature/btl-6"
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  TF_BUCKET: ${{ inputs.ENV }}-btl-platform-main-repo-backend-tfstate-${{ secrets.AWS_ACCOUNT_ID }}
+  TF_LOCK_TABLE: ${{ inputs.ENV }}-platform-main-state-lock
+  TF_STATE_PREFIX: ${{ inputs.ENV }}/idlms-app-lambda
+
+  # artifact bucket (needed by lambda stack)
+  ARTIFACT_BUCKET: ${{ inputs.ENV }}-btl-platform-main-repo-backend-artifact-${{ secrets.AWS_ACCOUNT_ID }}
+
+  REST_API_NAME: ${{ inputs.ENV }}-apigateway
+  APP_ENV_SSM_PARAM: /platform-main/${{ inputs.ENV }}/idlms-app-lambda/.env
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.ENV }}
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.BRANCH }}
+
+      - name: Use Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+
+      - name: Set Terraform env vars (bucket, region, lock table)
+        run: |
+          echo "TF_VAR_tf_bucket=${{ env.TF_BUCKET }}" >> $GITHUB_ENV
+          echo "TF_VAR_lock_table=${{ env.TF_LOCK_TABLE }}" >> $GITHUB_ENV
+          echo "TF_VAR_tf_state_bucket=${{ env.TF_BUCKET }}" >> $GITHUB_ENV
+          echo "TF_VAR_tf_state_region=${{ env.AWS_REGION }}" >> $GITHUB_ENV
+
+      # --- Build Lambda artifact from src/ ---
+      - name: Build Lambda zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd src
+          rm -rf dist node_modules backend-api.zip
+
+          # install including dev deps for build
+          npm ci
+          npm run build
+
+          # prune dev deps for runtime package
+          npm prune --omit=dev
+
+          # zip into repo root
+          zip -r ../backend-api.zip dist node_modules package.json package-lock.json
+
+      - name: Copy artifact into lambda stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENV="${{ inputs.ENV }}"
+          cp backend-api.zip "infra/environments/${ENV}/stacks/lambda/backend-api.zip"
+
+      - name: Upload Lambda artifact to S3
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENV="${{ inputs.ENV }}"
+          S3_BUCKET="${{ env.ARTIFACT_BUCKET }}"
+          S3_KEY="${ENV}/idlms-app-lambda/backend-api.zip"
+
+          echo "Uploading backend-api.zip to s3://${S3_BUCKET}/${S3_KEY}"
+          aws s3 cp backend-api.zip "s3://${S3_BUCKET}/${S3_KEY}"
+
+      # 1) SSM for lambda env
+      - name: terraform apply - ssm-app-lambda-env
+        working-directory: infra/environments/${{ inputs.ENV }}/stacks/ssm-app-lambda-env
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform init -reconfigure \
+            -backend-config="bucket=${TF_BUCKET}" \
+            -backend-config="key=${TF_STATE_PREFIX}/ssm-app-lambda-env/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
+            -backend-config="encrypt=true"
+          terraform apply -auto-approve -var-file="${{ inputs.ENV }}.tfvars"
+
+      # 2) CloudWatch for lambda
+      - name: terraform apply - cloudwatch-lambda
+        working-directory: infra/environments/${{ inputs.ENV }}/stacks/cloudwatch-lambda
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform init -reconfigure \
+            -backend-config="bucket=${TF_BUCKET}" \
+            -backend-config="key=${TF_STATE_PREFIX}/cloudwatch-lambda/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
+            -backend-config="encrypt=true"
+          terraform apply -auto-approve -var-file="${{ inputs.ENV }}.tfvars"
+
+      # 3) Lambda
+      - name: terraform apply - lambda
+        working-directory: infra/environments/${{ inputs.ENV }}/stacks/lambda
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform init -reconfigure \
+            -backend-config="bucket=${TF_BUCKET}" \
+            -backend-config="key=${TF_STATE_PREFIX}/lambda/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
+            -backend-config="encrypt=true"
+          terraform apply -auto-approve -var-file="${{ inputs.ENV }}.tfvars"
+
+      # 4) REST API -> Lambda route
+      - name: terraform apply - rest-api-lambda
+        working-directory: infra/environments/${{ inputs.ENV }}/stacks/rest-api-lambda
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform init -reconfigure \
+            -backend-config="bucket=${TF_BUCKET}" \
+            -backend-config="key=${TF_STATE_PREFIX}/rest-api-lambda/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
+            -backend-config="encrypt=true"
+          terraform apply -auto-approve -var-file="${{ inputs.ENV }}.tfvars"

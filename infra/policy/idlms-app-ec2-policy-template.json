@@ -1,0 +1,103 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "SsmParamReadScoped",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:GetParameter",
+                "ssm:GetParameters",
+                "ssm:GetParametersByPath"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "RDSInstRead",
+            "Effect": "Allow",
+            "Action": [
+                "rds:DescribeDBInstances",
+                "rds:DescribeDBClusters"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ArtifactsListBucket",
+            "Effect": "Allow",
+            "Action": "s3:ListBucket",
+            "Resource": "arn:aws:s3:::{{aws.env}}-btl-platform-main-repo-artifact-bucket-{{aws.account-id}}",
+            "Condition": {
+                "StringLike": {
+                    "s3:prefix": [
+                        "idlms-app/*",
+                        "idlms-app"
+                    ]
+                }
+            }
+        },
+        {
+            "Sid": "ArtifactsGetObjects",
+            "Effect": "Allow",
+            "Action": "s3:GetObject",
+            "Resource": "arn:aws:s3:::{{aws.env}}-btl-platform-main-repo-artifact-bucket-{{aws.account-id}}/idlms-app/*"
+        },
+        {
+            "Sid": "EcrAuthTokenGlobal",
+            "Effect": "Allow",
+            "Action": "ecr:GetAuthorizationToken",
+            "Resource": "*"
+        },
+        {
+            "Sid": "EcrPullRepoScoped",
+            "Effect": "Allow",
+            "Action": [
+                "ecr:BatchGetImage",
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:BatchCheckLayerAvailability"
+            ],
+            "Resource": "arn:aws:ecr:{{aws.region}}:{{aws.account-id}}:repository/{{aws.env}}-idlms-app"
+        },
+        {
+            "Sid": "CWLogsDescribeAndTail",
+            "Effect": "Allow",
+            "Action": [
+                "logs:DescribeLogGroups",
+                "logs:DescribeLogStreams",
+                "logs:GetLogEvents",
+                "logs:FilterLogEvents",
+                "logs:DescribeResourcePolicies"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "CWLogsWriteAppGroup",
+            "Effect": "Allow",
+            "Action": [
+                "logs:CreateLogGroup",
+                "logs:PutRetentionPolicy",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "Ec2SgIngressChangeDbOnly",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:AuthorizeSecurityGroupIngress",
+                "ec2:RevokeSecurityGroupIngress"
+            ],
+            "Resource": "arn:aws:ec2:{{aws.region}}:{{aws.account-id}}:security-group/*"
+        },
+        {
+            "Sid": "Ec2DescribeForSgOps",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:DescribeSecurityGroups",
+                "ec2:DescribeVpcs",
+                "ec2:DescribeSubnets",
+                "ec2:DescribeNetworkInterfaces"
+            ],
+            "Resource": "*"
+        }
+    ]
+}

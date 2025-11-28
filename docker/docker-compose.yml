@@ -1,0 +1,48 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: idlms_app_db
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Expose to host only if you need to connect with psql from the host:
+    # ports:
+    #   - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api1:
+    image: "${IMAGE_REPO}:${BUILD_TAG}"
+    container_name: api1
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - PORT=${PORT}
+      # IMPORTANT: when using the local DB container, DB_HOST must be "db"
+      # You can uncomment the next line to force it regardless of .env:
+      # - DB_HOST=db
+    ports:
+      - "${PORT}:${PORT}"
+    depends_on:
+      db:
+        condition: service_healthy # if your compose supports this; else use: depends_on: [db]
+    command: node dist/main.js
+
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION}
+        awslogs-group: /${ENV}/platform_main/apps/idlms-app/logs
+        awslogs-stream: api1
+        awslogs-create-group: "false" # set "true" if the group might not exist
+
+volumes:
+  pgdata:

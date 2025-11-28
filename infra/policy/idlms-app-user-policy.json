@@ -1,0 +1,143 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "SSMRun",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:SendCommand",
+                "ssm:List*",
+                "ssm:GetCommandInvocation",
+                "ssm:CancelCommand"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "S3TfAndArtifacts",
+            "Effect": "Allow",
+            "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:ListBucket",
+                "s3:GetBucketLocation",
+                "s3:AbortMultipartUpload",
+                "s3:ListBucketMultipartUploads"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ECRBuildPush",
+            "Effect": "Allow",
+            "Action": [
+                "ecr:GetAuthorizationToken",
+                "ecr:PutImageTagMutability",
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:InitiateLayerUpload",
+                "ecr:UploadLayerPart",
+                "ecr:CompleteLayerUpload",
+                "ecr:PutImage",
+                "ecr:BatchGetImage",
+                "ecr:DescribeRepositories",
+                "ecr:ListImages",
+                "ecr:DescribeImages"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "SSMParams",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:GetParameter",
+                "ssm:GetParameters",
+                "ssm:GetParametersByPath",
+                "ssm:PutParameter",
+                "ssm:ListTagsForResource"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "Discovery",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:DescribeInstances",
+                "sts:GetCallerIdentity"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "RdsSubnetGroups",
+            "Effect": "Allow",
+            "Action": [
+                "rds:CreateDBSubnetGroup",
+                "rds:ModifyDBSubnetGroup",
+                "rds:DeleteDBSubnetGroup",
+                "rds:DescribeDBSubnetGroups"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "RdsParameterGroups",
+            "Effect": "Allow",
+            "Action": [
+                "rds:CreateDBParameterGroup",
+                "rds:DeleteDBParameterGroup",
+                "rds:ModifyDBParameterGroup",
+                "rds:ResetDBParameterGroup",
+                "rds:DescribeDBParameterGroups",
+                "rds:DescribeDBParameters"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "RdsInstances",
+            "Effect": "Allow",
+            "Action": [
+                "rds:CreateDBInstance",
+                "rds:ModifyDBInstance",
+                "rds:DeleteDBInstance",
+                "rds:DescribeDBInstances",
+                "rds:RebootDBInstance",
+                "rds:AddTagsToResource",
+                "rds:ListTagsForResource",
+                "rds:RemoveTagsFromResource"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "SsmParameters",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:PutParameter",
+                "ssm:DeleteParameter",
+                "ssm:GetParameter",
+                "ssm:GetParameters",
+                "ssm:DescribeParameters",
+                "ssm:AddTagsToResource"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "Ec2DescribeForNetworking",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:DescribeVpcs",
+                "ec2:DescribeSubnets",
+                "ec2:DescribeSecurityGroups",
+                "ec2:DescribeRouteTables"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "ApiGatewayReadOnly",
+            "Effect": "Allow",
+            "Action": [
+                "apigateway:GET",
+                "apigateway:POST",
+                "apigateway:PUT",
+                "apigateway:PATCH",
+                "apigateway:DELETE"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
