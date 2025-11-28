@@ -11,7 +11,7 @@ locals {
   )
 
   ssm_base = var.ssm_prefix == "" ? "" : format(
-    "%s/ecr/%s/%s",
+    "%s/%s/ecr/%s",
     trimsuffix(var.ssm_prefix, "/"),
     var.env_name,
     var.repository_name
