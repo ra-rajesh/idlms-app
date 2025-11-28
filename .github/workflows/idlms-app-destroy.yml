@@ -6,7 +6,7 @@ on:
       ENV:
         description: "Environment (dev/stage/prod)"
         required: true
-        default: "dev"
+        default: "db-test"
       BRANCH:
         description: "Git ref (branch/tag) to checkout"
         required: true
