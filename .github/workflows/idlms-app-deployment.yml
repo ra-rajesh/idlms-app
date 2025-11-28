@@ -5,7 +5,7 @@ on:
       ENV:
         description: "Environment (dev/stage/prod)"
         required: true
-        default: "db-test"
+        default: "dev"
       BRANCH:
         description: "Git ref (branch/tag)"
         required: true
@@ -156,8 +156,8 @@ jobs:
           set -euo pipefail
           ENV="${{ inputs.ENV }}"
           REPO="${{ env.ECR_REPO }}"
-             URL=$(aws ssm get-parameter \
-            --name "/platform-main/ecr/${ENV}/${REPO}/repository_url" \
+          URL=$(aws ssm get-parameter \
+            --name "/platform-main/${ENV}/ecr/${REPO}/repository_url" \
             --query 'Parameter.Value' \
             --output text \
             --region "${AWS_REGION}")

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Usage: crate_env.sh <env.name> <aws.region> <app.name>
 if [[ $# -ne 3 ]]; then
   echo "Usage: $0 <env.name> <aws.region> <app.name>"
   echo "Example: $0 test eu-north-1 idlms-app"
@@ -12,10 +11,9 @@ ENV_NAME="$1"
 AWS_REGION="$2"
 APP_NAME="$3"
 
-TEMPLATE_DIR="template"  # Folder next to this script
-DEST_DIR="$ENV_NAME"     # New folder based on env.name
+TEMPLATE_DIR="template"  
+DEST_DIR="$ENV_NAME"     
 
-# Checks
 if [[ ! -d "$TEMPLATE_DIR" ]]; then
   echo "ERROR: Template folder '$TEMPLATE_DIR' not found." >&2
   exit 1
@@ -29,17 +27,15 @@ echo "Creating environment folder: $DEST_DIR"
 mkdir -p "$DEST_DIR"
 cp -a "$TEMPLATE_DIR"/. "$DEST_DIR"/
 
-cd "$DEST_DIR/stacks"
+cd "$DEST_DIR"
 echo "Now working in: $(pwd)"
 
-# Pick correct sed syntax for OS
 if sed --version >/dev/null 2>&1; then
-  SED_INPLACE=(sed -i)      # GNU sed
+  SED_INPLACE=(sed -i)      
 else
-  SED_INPLACE=(sed -i '')   # BSD/macOS sed
+  SED_INPLACE=(sed -i '')  
 fi
 
-# Escape & for sed safety
 ENV_REPL="${ENV_NAME//&/\\&}"
 REGION_REPL="${AWS_REGION//&/\\&}"
 APP_REPL="${APP_NAME//&/\\&}"
@@ -47,9 +43,8 @@ APP_REPL="${APP_NAME//&/\\&}"
 echo "Replacing placeholders only in env.tfvars:"
 echo "  {{env.name}}   -> $ENV_NAME"
 echo "  {{aws.region}} -> $AWS_REGION"
-echo "  {{app.name}} -> $APP_NAME"
+echo "  {{app.name}}   -> $APP_NAME"
 
-# Only modify test.tfvars files
 find . -type f -name "env.tfvars" -print0 \
 | xargs -0 "${SED_INPLACE[@]}" \
     -e "s|{{env\.name}}|$ENV_REPL|g" \
@@ -63,7 +58,6 @@ find . -type f -name "env.tfvars" -print0 \
     mv "$file" "$dir/${ENV_NAME}.tfvars"
 done
 
-# Count renamed files
 COUNT=$(find . -type f -name "${ENV_NAME}.tfvars" | wc -l | tr -d ' ')
 
 echo "Done! Updated and renamed $COUNT ${ENV_NAME}.tfvars file(s)."
