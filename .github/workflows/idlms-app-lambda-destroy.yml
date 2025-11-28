@@ -10,7 +10,7 @@ on:
             BRANCH:
                 description: "Git ref (branch/tag) - for infra files"
                 required: true
-                default: "feature/btl-6"
+                default: "feature/btl-1"
 
 env:
     AWS_REGION: ${{ vars.AWS_REGION }}
