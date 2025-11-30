@@ -1,4 +1,4 @@
-name: "idlms-app destroy"
+name: "idlms-app destroy" 
 
 on:
   workflow_dispatch:

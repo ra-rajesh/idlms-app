@@ -1,4 +1,4 @@
-name: "idlms-app-lambda deploy"
+name: "idlms-app-lambda deploy" 
 
 on:
   workflow_dispatch:

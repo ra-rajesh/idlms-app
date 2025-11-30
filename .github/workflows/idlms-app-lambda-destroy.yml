@@ -1,4 +1,4 @@
-name: "idlms-app-lambda destroy"
+name: "idlms-app-lambda destroy" 
 
 on:
   workflow_dispatch:
