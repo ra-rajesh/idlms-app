@@ -6,11 +6,11 @@ on:
       ENV:
         description: "Environment (dev/stage/prod/db-test)"
         required: true
-        default: "db-test"
+        default: "main"
       BRANCH:
         description: "Git ref (branch/tag)"
         required: true
-        default: "feature/btl-1"
+        default: "main
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION }}
