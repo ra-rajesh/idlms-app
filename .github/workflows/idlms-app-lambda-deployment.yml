@@ -10,7 +10,7 @@ on:
       BRANCH:
         description: "Git ref (branch/tag)"
         required: true
-        default: "main
+        default: "main"
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION }}
