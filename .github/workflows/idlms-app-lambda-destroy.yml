@@ -1,132 +1,132 @@
-name: "idlms-app-lambda destroy"
+name: "idlms-app-lambda destroy" 
 
 on:
-    workflow_dispatch:
-        inputs:
-            ENV:
-                description: "Environment (dev/stage/prod/db-test)"
-                required: true
-                default: "db-test"
-            BRANCH:
-                description: "Git ref (branch/tag) - for infra files"
-                required: true
-                default: "feature/btl-1"
+  workflow_dispatch:
+    inputs:
+      ENV:
+        description: "Environment (dev/stage/prod/db-test)"
+        required: true
+        default: "db-test"
+      BRANCH:
+        description: "Git ref (branch/tag) - for infra files"
+        required: true
+        default: "feature/btl-1"
 
 env:
-    AWS_REGION: ${{ vars.AWS_REGION }}
-    TF_BUCKET: ${{ inputs.ENV }}-btl-platform-main-repo-backend-tfstate-${{ secrets.AWS_ACCOUNT_ID }}
-    TF_LOCK_TABLE: ${{ inputs.ENV }}-platform-main-state-lock
-    TF_STATE_PREFIX: ${{ inputs.ENV }}/idlms-app-lambda
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  TF_BUCKET: ${{ inputs.ENV }}-btl-platform-main-repo-backend-tfstate-${{ secrets.AWS_ACCOUNT_ID }}
+  TF_LOCK_TABLE: ${{ inputs.ENV }}-platform-main-state-lock
+  TF_STATE_PREFIX: ${{ inputs.ENV }}/idlms-app-lambda
 
-    # artifact bucket (same as deploy)
-    ARTIFACT_BUCKET: ${{ inputs.ENV }}-btl-platform-main-repo-backend-artifact-${{ secrets.AWS_ACCOUNT_ID }}
+  # artifact bucket (same as deploy)
+  ARTIFACT_BUCKET: ${{ inputs.ENV }}-btl-platform-main-repo-backend-artifact-${{ secrets.AWS_ACCOUNT_ID }}
 
-    REST_API_NAME: ${{ inputs.ENV }}-apigateway
-    APP_ENV_SSM_PARAM: /platform-main/${{ inputs.ENV }}/idlms-app-lambda/.env
+  REST_API_NAME: ${{ inputs.ENV }}-apigateway
+  APP_ENV_SSM_PARAM: /platform-main/${{ inputs.ENV }}/idlms-app-lambda/.env
 
 jobs:
-    destroy:
-        runs-on: ubuntu-latest
-        environment: ${{ inputs.ENV }}
-        permissions:
-            contents: read
-            id-token: write
+  destroy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.ENV }}
+    permissions:
+      contents: read
+      id-token: write
 
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
-              with:
-                  ref: ${{ inputs.BRANCH }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.BRANCH }}
 
-            - name: Use Node.js 18
-              uses: actions/setup-node@v4
-              with:
-                  node-version: 18
+      - name: Use Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
 
-            - name: Configure AWS
-              uses: aws-actions/configure-aws-credentials@v4
-              with:
-                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-                  aws-region: ${{ env.AWS_REGION }}
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-            - name: Setup Terraform
-              uses: hashicorp/setup-terraform@v3
-              with:
-                  terraform_version: 1.6.6
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
 
-            - name: Set Terraform env vars (bucket, region, lock table)
-              shell: bash
-              run: |
-                  echo "TF_VAR_tf_bucket=${{ env.TF_BUCKET }}" >> $GITHUB_ENV
-                  echo "TF_VAR_lock_table=${{ env.TF_LOCK_TABLE }}" >> $GITHUB_ENV
-                  echo "TF_VAR_tf_state_bucket=${{ env.TF_BUCKET }}" >> $GITHUB_ENV
-                  echo "TF_VAR_tf_state_region=${{ env.AWS_REGION }}" >> $GITHUB_ENV
+      - name: Set Terraform env vars (bucket, region, lock table)
+        shell: bash
+        run: |
+          echo "TF_VAR_lock_table=${{ env.TF_LOCK_TABLE }}" >> $GITHUB_ENV
+          echo "TF_VAR_platform_main_state_bucket=${{ env.TF_BUCKET }}" >> $GITHUB_ENV
+          echo "TF_VAR_lambda_state_bucket=${{ env.TF_BUCKET }}" >> $GITHUB_ENV
+          echo "TF_VAR_artifact_bucket=${{ env.ARTIFACT_BUCKET }}" >> $GITHUB_ENV
 
-            # 0) Remove Lambda artifact object from S3 (NOT the bucket)
-            - name: Delete Lambda artifact object from S3
-              shell: bash
-              run: |
-                  set -euo pipefail
-                  ENV_NAME="${{ inputs.ENV }}"
-                  S3_BUCKET="${{ env.ARTIFACT_BUCKET }}"
-                  S3_KEY="${ENV_NAME}/idlms-app-lambda/backend-api.zip"
+      # 0) Remove Lambda artifact object from S3 (NOT the bucket)
+      - name: Delete Lambda artifact object from S3
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENV_NAME="${{ inputs.ENV }}"
+          S3_BUCKET="${{ env.ARTIFACT_BUCKET }}"
+          S3_KEY="${ENV_NAME}/idlms-app-lambda/backend-api.zip"
 
-                  echo "Deleting artifact s3://${S3_BUCKET}/${S3_KEY} (if present)..."
-                  aws s3 rm "s3://${S3_BUCKET}/${S3_KEY}" || echo "Object not found, continue."
+          echo "Deleting artifact s3://${S3_BUCKET}/${S3_KEY} (if present)..."
+          aws s3 rm "s3://${S3_BUCKET}/${S3_KEY}" || echo "Object not found, continue."
 
-            # 1) Destroy REST API -> Lambda routes
-            - name: terraform destroy - rest-api-lambda
-              working-directory: infra/environments/${{ inputs.ENV }}/stacks/rest-api-lambda
-              shell: bash
-              run: |
-                  set -euo pipefail
-                  terraform init -reconfigure \
-                    -backend-config="bucket=${TF_BUCKET}" \
-                    -backend-config="key=${TF_STATE_PREFIX}/rest-api-lambda/terraform.tfstate" \
-                    -backend-config="region=${AWS_REGION}" \
-                    -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
-                    -backend-config="encrypt=true"
-                  terraform destroy -auto-approve -var-file="${{ inputs.ENV }}.tfvars"
+      # 1) Destroy REST API -> Lambda routes
+      - name: terraform destroy - rest-api-lambda
+        working-directory: infra/environments/${{ inputs.ENV }}/lambda-stacks/rest-api-lambda
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform init -reconfigure \
+            -backend-config="bucket=${TF_BUCKET}" \
+            -backend-config="key=${TF_STATE_PREFIX}/rest-api-lambda/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
+            -backend-config="encrypt=true"
+          terraform destroy -auto-approve -var-file="${{ inputs.ENV }}.tfvars"
 
-            # 2) Destroy Lambda itself
-            - name: terraform destroy - lambda
-              working-directory: infra/environments/${{ inputs.ENV }}/stacks/lambda
-              shell: bash
-              run: |
-                  set -euo pipefail
-                  terraform init -reconfigure \
-                    -backend-config="bucket=${TF_BUCKET}" \
-                    -backend-config="key=${TF_STATE_PREFIX}/lambda/terraform.tfstate" \
-                    -backend-config="region=${AWS_REGION}" \
-                    -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
-                    -backend-config="encrypt=true"
-                  terraform destroy -auto-approve -var-file="${{ inputs.ENV }}.tfvars"
+      # 2) Destroy Lambda itself
+      - name: terraform destroy - lambda
+        working-directory: infra/environments/${{ inputs.ENV }}/lambda-stacks/lambda
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform init -reconfigure \
+            -backend-config="bucket=${TF_BUCKET}" \
+            -backend-config="key=${TF_STATE_PREFIX}/lambda/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
+            -backend-config="encrypt=true"
+          terraform destroy -auto-approve -var-file="${{ inputs.ENV }}.tfvars"
 
-            # 3) Destroy CloudWatch alarms/log groups for lambda
-            - name: terraform destroy - cloudwatch-lambda
-              working-directory: infra/environments/${{ inputs.ENV }}/stacks/cloudwatch-lambda
-              shell: bash
-              run: |
-                  set -euo pipefail
-                  terraform init -reconfigure \
-                    -backend-config="bucket=${TF_BUCKET}" \
-                    -backend-config="key=${TF_STATE_PREFIX}/cloudwatch-lambda/terraform.tfstate" \
-                    -backend-config="region=${AWS_REGION}" \
-                    -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
-                    -backend-config="encrypt=true"
-                  terraform destroy -auto-approve -var-file="${{ inputs.ENV }}.tfvars"
+      # 3) Destroy CloudWatch alarms/log groups for lambda
+      - name: terraform destroy - cloudwatch-lambda
+        working-directory: infra/environments/${{ inputs.ENV }}/lambda-stacks/cloudwatch-lambda
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform init -reconfigure \
+            -backend-config="bucket=${TF_BUCKET}" \
+            -backend-config="key=${TF_STATE_PREFIX}/cloudwatch-lambda/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
+            -backend-config="encrypt=true"
+          terraform destroy -auto-approve -var-file="${{ inputs.ENV }}.tfvars"
 
-            # 4) Finally destroy SSM .env for lambda
-            - name: terraform destroy - ssm-app-lambda-env
-              working-directory: infra/environments/${{ inputs.ENV }}/stacks/ssm-app-lambda-env
-              shell: bash
-              run: |
-                  set -euo pipefail
-                  terraform init -reconfigure \
-                    -backend-config="bucket=${TF_BUCKET}" \
-                    -backend-config="key=${TF_STATE_PREFIX}/ssm-app-lambda-env/terraform.tfstate" \
-                    -backend-config="region=${AWS_REGION}" \
-                    -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
-                    -backend-config="encrypt=true"
-                  terraform destroy -auto-approve -var-file="${{ inputs.ENV }}.tfvars"
+      # 4) Finally destroy SSM .env for lambda
+      - name: terraform destroy - ssm-app-lambda-env
+        working-directory: infra/environments/${{ inputs.ENV }}/lambda-stacks/ssm-app-lambda-env
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform init -reconfigure \
+            -backend-config="bucket=${TF_BUCKET}" \
+            -backend-config="key=${TF_STATE_PREFIX}/ssm-app-lambda-env/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
+            -backend-config="encrypt=true"
+          terraform destroy -auto-approve -var-file="${{ inputs.ENV }}.tfvars"

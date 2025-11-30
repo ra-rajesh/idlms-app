@@ -1,4 +1,4 @@
-name: "idlms-app-lambda deploy"
+name: "idlms-app-lambda deploy" 
 
 on:
   workflow_dispatch:
@@ -57,10 +57,10 @@ jobs:
 
       - name: Set Terraform env vars (bucket, region, lock table)
         run: |
-          echo "TF_VAR_tf_bucket=${{ env.TF_BUCKET }}" >> $GITHUB_ENV
           echo "TF_VAR_lock_table=${{ env.TF_LOCK_TABLE }}" >> $GITHUB_ENV
-          echo "TF_VAR_tf_state_bucket=${{ env.TF_BUCKET }}" >> $GITHUB_ENV
-          echo "TF_VAR_tf_state_region=${{ env.AWS_REGION }}" >> $GITHUB_ENV
+          echo "TF_VAR_platform_main_state_bucket=${{ env.TF_BUCKET }}" >> $GITHUB_ENV
+          echo "TF_VAR_lambda_state_bucket=${{ env.TF_BUCKET }}" >> $GITHUB_ENV
+          echo "TF_VAR_artifact_bucket=${{ env.ARTIFACT_BUCKET }}" >> $GITHUB_ENV
 
       # --- Build Lambda artifact from src/ ---
       - name: Build Lambda zip
@@ -85,7 +85,7 @@ jobs:
         run: |
           set -euo pipefail
           ENV="${{ inputs.ENV }}"
-          cp backend-api.zip "infra/environments/${ENV}/stacks/lambda/backend-api.zip"
+          cp backend-api.zip "infra/environments/${ENV}/lambda-stacks/lambda/backend-api.zip"
 
       - name: Upload Lambda artifact to S3
         shell: bash
@@ -100,7 +100,7 @@ jobs:
 
       # 1) SSM for lambda env
       - name: terraform apply - ssm-app-lambda-env
-        working-directory: infra/environments/${{ inputs.ENV }}/stacks/ssm-app-lambda-env
+        working-directory: infra/environments/${{ inputs.ENV }}/lambda-stacks/ssm-app-lambda-env
         shell: bash
         run: |
           set -euo pipefail
@@ -114,7 +114,7 @@ jobs:
 
       # 2) CloudWatch for lambda
       - name: terraform apply - cloudwatch-lambda
-        working-directory: infra/environments/${{ inputs.ENV }}/stacks/cloudwatch-lambda
+        working-directory: infra/environments/${{ inputs.ENV }}/lambda-stacks/cloudwatch-lambda
         shell: bash
         run: |
           set -euo pipefail
@@ -128,7 +128,7 @@ jobs:
 
       # 3) Lambda
       - name: terraform apply - lambda
-        working-directory: infra/environments/${{ inputs.ENV }}/stacks/lambda
+        working-directory: infra/environments/${{ inputs.ENV }}/lambda-stacks/lambda
         shell: bash
         run: |
           set -euo pipefail
@@ -142,7 +142,7 @@ jobs:
 
       # 4) REST API -> Lambda route
       - name: terraform apply - rest-api-lambda
-        working-directory: infra/environments/${{ inputs.ENV }}/stacks/rest-api-lambda
+        working-directory: infra/environments/${{ inputs.ENV }}/lambda-stacks/rest-api-lambda
         shell: bash
         run: |
           set -euo pipefail
