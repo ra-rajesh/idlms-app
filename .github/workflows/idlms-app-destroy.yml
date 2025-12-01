@@ -16,11 +16,11 @@ on:
         required: true
         default: "true"
       INCLUDE_ECR:
-        description: "Also delete the ECR repository (empties images first) (true/false)"
+        description: "Also delete S3 image artifacts (LATEST + releases) for this app (true/false)"
         required: true
         default: "false"
       DELETE_ARTIFACTS:
-        description: "Delete S3 artifacts under <bucket>/<ARTIFACT_PREFIX>/ (true/false)"
+        description: "Delete docker-compose.yml artifact in S3 for this app (true/false)"
         required: true
         default: "false"
 
@@ -30,17 +30,17 @@ env:
   # Same dynamic names/backends as deploy
   TF_BUCKET: ${{ inputs.ENV }}-btl-platform-main-repo-backend-tfstate-${{ secrets.AWS_ACCOUNT_ID }}
   ARTIFACT_BUCKET: ${{ inputs.ENV }}-btl-platform-main-repo-backend-artifact-${{ secrets.AWS_ACCOUNT_ID }}
-  TF_LOCK_TABLE: ${{inputs.ENV}}-platform-main-state-lock
-  TF_STATE_PREFIX: ${{ inputs.ENV }}/${{vars.APP_NAME}}
+  TF_LOCK_TABLE: ${{ inputs.ENV }}-platform-main-state-lock
+  TF_STATE_PREFIX: ${{ inputs.ENV }}/${{ vars.APP_NAME }}
 
   # repo-specific
-  ECR_REPO: ${{ inputs.ENV }}-${{vars.APP_NAME}}
-  ARTIFACT_PREFIX: ${{ inputs.ENV }}/${{vars.APP_NAME}}
+  ECR_REPO: ${{ inputs.ENV }}-${{ vars.APP_NAME }}
+  ARTIFACT_PREFIX: ${{ inputs.ENV }}/${{ vars.APP_NAME }}
 
   # derived defaults (not inputs)
   EC2_NAME: ${{ inputs.ENV }}-compute
   REST_API_NAME: ${{ inputs.ENV }}-apigateway
-  APP_ENV_SSM_PARAM: /platform-main/${{ inputs.ENV }}/${{vars.APP_NAME}}/.env
+  APP_ENV_SSM_PARAM: /platform-main/${{ inputs.ENV }}/${{ vars.APP_NAME }}/.env
 
 jobs:
   destroy:
@@ -94,13 +94,13 @@ jobs:
           # 2) remote script to stop stack
           REMOTE=$(cat <<'BASH'
           set -euo pipefail
-          ENV="__ENV__"; REGION="__REGION__"; APP_DIR="/opt/${ENV}/${{vars.APP_NAME}}"
+          ENV="__ENV__"; REGION="__REGION__"; APP_DIR="/opt/${ENV}/${{ vars.APP_NAME }}"
           command -v docker >/dev/null 2>&1 || { apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io; systemctl enable --now docker || true; }
           docker compose version >/dev/null 2>&1 || { mkdir -p /usr/local/lib/docker/cli-plugins; curl -fsSL "https://github.com/docker/compose/releases/download/v2.27.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/lib/docker/cli-plugins/docker-compose; chmod +x /usr/local/lib/docker/cli-plugins/docker-compose; }
 
           if [ -f "$APP_DIR/docker-compose.yml" ]; then
-            echo "Bringing down compose project ${{vars.APP_NAME}} ..."
-            docker compose --project-name ${{vars.APP_NAME}} --env-file "$APP_DIR/.env" -f "$APP_DIR/docker-compose.yml" down --remove-orphans || true
+            echo "Bringing down compose project ${{ vars.APP_NAME }} ..."
+            docker compose --project-name ${{ vars.APP_NAME }} --env-file "$APP_DIR/.env" -f "$APP_DIR/docker-compose.yml" down --remove-orphans || true
           else
             echo "No compose file found, attempting to stop containers named api1 ..."
             ids=$(docker ps -q --filter name=api1 || true)
@@ -120,7 +120,7 @@ jobs:
 
           # remove local state on host
           rm -rf "$APP_DIR" || true
-          docker network rm ${{vars.APP_NAME}}_default || true
+          docker network rm ${{ vars.APP_NAME }}_default || true
           BASH
           )
 
@@ -184,7 +184,7 @@ jobs:
       - name: cleanup SSM ad-hoc params (last-successful-build only)
         run: |
           set -euo pipefail
-          aws ssm delete-parameter --region "${AWS_REGION}" --name "/platform-main/${{ inputs.ENV }}/${{vars.APP_NAME}}/last-successful-build" || true
+          aws ssm delete-parameter --region "${AWS_REGION}" --name "/platform-main/${{ inputs.ENV }}/${{ vars.APP_NAME }}/last-successful-build" || true
 
       # 4) Destroy CloudWatch (app log group)
       - name: terraform destroy - cloudwatch (app log group)
@@ -202,17 +202,30 @@ jobs:
       - name: ensure CloudWatch app log group absent (defensive)
         run: |
           set -euo pipefail
-          LOG_GROUP="/${{ inputs.ENV }}/platform_main/apps/${{vars.APP_NAME}}/logs"
+          LOG_GROUP="/${{ inputs.ENV }}/platform_main/apps/${{ vars.APP_NAME }}/logs"
           aws logs delete-log-group --region "${AWS_REGION}" --log-group-name "$LOG_GROUP" || true
 
-      # 5) Optionally clean artifacts in S3
-      - name: optionally delete S3 artifacts under prefix
+      # 5) Optionally delete "image" artifacts in S3 (LATEST + releases)
+      - name: optionally delete S3 image artifacts (LATEST + releases)
+        if: ${{ inputs.INCLUDE_ECR == 'true' }}
+        run: |
+          set -euo pipefail
+          # Example:
+          # s3://db-test-btl-platform-main-repo-backend-artifact-<acct>/db-test/idlms-app/LATEST/
+          aws s3 rm --recursive "s3://${ARTIFACT_BUCKET}/${ARTIFACT_PREFIX}/LATEST/" --region "${AWS_REGION}" || true
+          # s3://db-test-btl-platform-main-repo-backend-artifact-<acct>/db-test/idlms-app/releases/
+          aws s3 rm --recursive "s3://${ARTIFACT_BUCKET}/${ARTIFACT_PREFIX}/releases/" --region "${AWS_REGION}" || true
+
+      # 6) Optionally delete docker-compose.yml from artifact bucket
+      - name: optionally delete docker-compose.yml from S3
         if: ${{ inputs.DELETE_ARTIFACTS == 'true' }}
         run: |
           set -euo pipefail
-          aws s3 rm --recursive "s3://${ARTIFACT_BUCKET}/${ARTIFACT_PREFIX}/" --region "${AWS_REGION}" || true
+          # Example:
+          # s3://db-test-btl-platform-main-repo-backend-artifact-<acct>/db-test/idlms-app/docker-compose.yml
+          aws s3 rm "s3://${ARTIFACT_BUCKET}/${ARTIFACT_PREFIX}/docker-compose.yml" --region "${AWS_REGION}" || true
 
-      # 6) Destroy SSM parameter (.env)
+      # 7) Destroy SSM parameter (.env)
       - name: terraform destroy - ssm parameter (.env)
         working-directory: infra/environments/${{ inputs.ENV }}/stacks/ssm-app-env
         run: |
@@ -220,47 +233,6 @@ jobs:
           terraform init -reconfigure \
             -backend-config="bucket=${TF_BUCKET}" \
             -backend-config="key=${TF_STATE_PREFIX}/ssm-app-env/terraform.tfstate" \
-            -backend-config="region=${AWS_REGION}" \
-            -backend-config="dynamodb_table=${TF_LOCK_TABLE}"
-          terraform destroy -auto-approve -var-file="${{ inputs.ENV }}.tfvars"
-
-      # 7) (optional) Empty & remove ECR repo
-      - name: Resolve ECR_REPO_URL from SSM (fallback to describe-repositories)
-        if: ${{ inputs.INCLUDE_ECR == 'true' }}
-        run: |
-          set -euo pipefail
-          ENV="${{ inputs.ENV }}"; REPO="${{ env.ECR_REPO }}"
-          URL=$(aws ssm get-parameter \
-            --name "/platform-main/${ENV}/ecr/${REPO}/repository_url" \
-            --query 'Parameter.Value' --output text --region "${AWS_REGION}" 2>/dev/null || true)
-          if [ -z "$URL" ] || [ "$URL" = "None" ]; then
-            URL=$(aws ecr describe-repositories --repository-names "$REPO" --region "${AWS_REGION}" \
-              --query 'repositories[0].repositoryUri' --output text 2>/dev/null || true)
-          fi
-          [ -n "$URL" ] && [ "$URL" != "None" ] || { echo "ECR URL not found"; exit 0; }
-          echo "ECR_REPO_URL=${URL}" >> "$GITHUB_ENV"
-
-      - name: Empty ECR images (if any)
-        if: ${{ inputs.INCLUDE_ECR == 'true' }}
-        run: |
-          set -euo pipefail
-          REPO_NAME="${ECR_REPO}"
-          # list all images (by digest) and delete in batches
-          while true; do
-            IDS=$(aws ecr list-images --repository-name "$REPO_NAME" --region "${AWS_REGION}" --query 'imageIds[:100]' --output json)
-            COUNT=$(echo "$IDS" | jq 'length')
-            [ "$COUNT" -gt 0 ] || break
-            aws ecr batch-delete-image --repository-name "$REPO_NAME" --image-ids "$IDS" --region "${AWS_REGION}" || true
-          done
-
-      - name: terraform destroy - ecr
-        if: ${{ inputs.INCLUDE_ECR == 'true' }}
-        working-directory: infra/environments/${{ inputs.ENV }}/stacks/ecr
-        run: |
-          set -euo pipefail
-          terraform init -reconfigure \
-            -backend-config="bucket=${TF_BUCKET}" \
-            -backend-config="key=${TF_STATE_PREFIX}/ecr/terraform.tfstate" \
             -backend-config="region=${AWS_REGION}" \
             -backend-config="dynamodb_table=${TF_LOCK_TABLE}"
           terraform destroy -auto-approve -var-file="${{ inputs.ENV }}.tfvars"
