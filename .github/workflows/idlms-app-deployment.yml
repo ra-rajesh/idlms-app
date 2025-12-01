@@ -22,7 +22,7 @@ env:
 
   # repo-specific
   ECR_REPO: ${{ inputs.ENV }}-${{vars.APP_NAME}}
-  ARTIFACT_PREFIX: ${{vars.APP_NAME}}
+  ARTIFACT_PREFIX: ${{ inputs.ENV }}/${{ vars.APP_NAME }}
 
   # derived defaults (not inputs)
   EC2_NAME: ${{ inputs.ENV }}-compute
@@ -197,16 +197,14 @@ jobs:
           aws s3 cp docker/docker-compose.yml "s3://${ARTIFACT_BUCKET}/${ARTIFACT_PREFIX}/releases/${STAMP}/docker-compose.yml" --region "${AWS_REGION}"
           printf "releases/%s" "${STAMP}" | aws s3 cp - "s3://${ARTIFACT_BUCKET}/${ARTIFACT_PREFIX}/LATEST" --region "${AWS_REGION}"
 
-      # 10) Also upload a flat path for simple pickup (s3://<bucket>/<env>/docker-compose.yml)
+         # 10) Also upload a flat path for simple pickup (s3://<bucket>/<env>/<app>/docker-compose.yml)
       - name: Upload docker-compose.yml to S3 (flat path)
         env:
           BACKUP_BUCKET: ${{ env.ARTIFACT_BUCKET }}
         run: |
           set -euo pipefail
-          echo "Uploading flat compose to: s3://${BACKUP_BUCKET}/${{ inputs.ENV }}/docker-compose.yml"
-          aws s3 cp docker/docker-compose.yml \
-            "s3://${BACKUP_BUCKET}/${{ inputs.ENV }}/docker-compose.yml" \
-            --region "${AWS_REGION}"
+          echo "Uploading flat compose to: s3://${BACKUP_BUCKET}/${ARTIFACT_PREFIX}/docker-compose.yml"
+          aws s3 cp docker/docker-compose.yml "s3://${BACKUP_BUCKET}/${ARTIFACT_PREFIX}/docker-compose.yml" --region "${AWS_REGION}"
 
       # 11) Deploy via SSM
       - name: Deploy via SSM (single service + health + rollback)
@@ -259,8 +257,8 @@ jobs:
           aws ssm get-parameter --region "$REGION" --name "/platform-main/${ENV}/${{vars.APP_NAME}}/.env" --with-decryption --query "Parameter.Value" --output text > "$APP_DIR/.env"
 
           # guarantee required keys for compose substitution
-          grep -q '^ENV=/d' "$APP_DIR/.env" || echo "ENV=${ENV}" >> "$APP_DIR/.env"
-          grep -q '^AWS_REGION=/d' "$APP_DIR/.env" || echo "AWS_REGION=${REGION}" >> "$APP_DIR/.env"
+          grep -q '^ENV=' "$APP_DIR/.env" || echo "ENV=${ENV}" >> "$APP_DIR/.env"
+          grep -q '^AWS_REGION=' "$APP_DIR/.env" || echo "AWS_REGION=${REGION}" >> "$APP_DIR/.env"
           sed -i '/^BUILD_TAG=/d' "$APP_DIR/.env"; echo "BUILD_TAG=$TAG" >> "$APP_DIR/.env"
           sed -i '/^IMAGE_REPO=/d' "$APP_DIR/.env"; echo "IMAGE_REPO=$ECR" >> "$APP_DIR/.env"
           grep -q '^PORT=' "$APP_DIR/.env" || echo "PORT=4000" >> "$APP_DIR/.env"
