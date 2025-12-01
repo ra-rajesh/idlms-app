@@ -16,7 +16,7 @@ on:
         required: true
         default: "true"
       INCLUDE_ECR:
-        description: "Also delete S3 image artifacts (LATEST + releases) for this app (true/false)"
+        description: "Also delete S3 image artifacts (LATEST + releases) and ECR repo for this app (true/false)"
         required: true
         default: "false"
       DELETE_ARTIFACTS:
@@ -210,10 +210,10 @@ jobs:
         if: ${{ inputs.INCLUDE_ECR == 'true' }}
         run: |
           set -euo pipefail
-          # Example:
-          # s3://db-test-btl-platform-main-repo-backend-artifact-<acct>/db-test/idlms-app/LATEST/
+          # Examples:
+          # s3://<bucket>/<env>/<app>/LATEST/
+          # s3://<bucket>/<env>/<app>/releases/
           aws s3 rm --recursive "s3://${ARTIFACT_BUCKET}/${ARTIFACT_PREFIX}/LATEST/" --region "${AWS_REGION}" || true
-          # s3://db-test-btl-platform-main-repo-backend-artifact-<acct>/db-test/idlms-app/releases/
           aws s3 rm --recursive "s3://${ARTIFACT_BUCKET}/${ARTIFACT_PREFIX}/releases/" --region "${AWS_REGION}" || true
 
       # 6) Optionally delete docker-compose.yml from artifact bucket
@@ -222,10 +222,56 @@ jobs:
         run: |
           set -euo pipefail
           # Example:
-          # s3://db-test-btl-platform-main-repo-backend-artifact-<acct>/db-test/idlms-app/docker-compose.yml
+          # s3://<bucket>/<env>/<app>/docker-compose.yml
           aws s3 rm "s3://${ARTIFACT_BUCKET}/${ARTIFACT_PREFIX}/docker-compose.yml" --region "${AWS_REGION}" || true
 
-      # 7) Destroy SSM parameter (.env)
+      # 7) Optionally empty ECR repo (images) and destroy ECR stack
+      - name: Empty ECR images (BUILD_TAG + latest + others)
+        if: ${{ inputs.INCLUDE_ECR == 'true' }}
+        run: |
+          set -euo pipefail
+          REPO_NAME="${ECR_REPO}"
+          echo "Checking ECR repo: ${REPO_NAME}"
+
+          if ! aws ecr describe-repositories \
+            --repository-names "$REPO_NAME" \
+            --region "${AWS_REGION}" >/dev/null 2>&1; then
+            echo "ECR repository $REPO_NAME not found; skipping ECR cleanup"
+            exit 0
+          fi
+
+          while true; do
+            IMAGES_JSON=$(aws ecr list-images \
+              --repository-name "$REPO_NAME" \
+              --region "${AWS_REGION}" \
+              --query 'imageIds' \
+              --output json)
+
+            if [ "$IMAGES_JSON" = "[]" ]; then
+              echo "No more images to delete in $REPO_NAME"
+              break
+            fi
+
+            echo "Deleting a batch of images in $REPO_NAME ..."
+            aws ecr batch-delete-image \
+              --repository-name "$REPO_NAME" \
+              --region "${AWS_REGION}" \
+              --image-ids "$IMAGES_JSON" || true
+          done
+
+      - name: terraform destroy - ecr
+        if: ${{ inputs.INCLUDE_ECR == 'true' }}
+        working-directory: infra/environments/${{ inputs.ENV }}/stacks/ecr
+        run: |
+          set -euo pipefail
+          terraform init -reconfigure \
+            -backend-config="bucket=${TF_BUCKET}" \
+            -backend-config="key=${TF_STATE_PREFIX}/ecr/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TF_LOCK_TABLE}"
+          terraform destroy -auto-approve -var-file="${{ inputs.ENV }}.tfvars"
+
+      # 8) Destroy SSM parameter (.env)
       - name: terraform destroy - ssm parameter (.env)
         working-directory: infra/environments/${{ inputs.ENV }}/stacks/ssm-app-env
         run: |
