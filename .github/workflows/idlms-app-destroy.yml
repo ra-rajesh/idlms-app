@@ -29,13 +29,13 @@ env:
 
   # Same dynamic names/backends as deploy
   TF_BUCKET: ${{ inputs.ENV }}-btl-platform-main-repo-backend-tfstate-${{ secrets.AWS_ACCOUNT_ID }}
-  ARTIFACT_BUCKET: ${{ inputs.ENV }}-btl-platform-main-repo-artifact-bucket-${{ secrets.AWS_ACCOUNT_ID }}
+  ARTIFACT_BUCKET: ${{ inputs.ENV }}-btl-platform-main-repo-backend-artifact-${{ secrets.AWS_ACCOUNT_ID }}
   TF_LOCK_TABLE: ${{inputs.ENV}}-platform-main-state-lock
   TF_STATE_PREFIX: ${{ inputs.ENV }}/${{vars.APP_NAME}}
 
   # repo-specific
   ECR_REPO: ${{ inputs.ENV }}-${{vars.APP_NAME}}
-  ARTIFACT_PREFIX: ${{vars.APP_NAME}}
+  ARTIFACT_PREFIX: ${{ inputs.ENV }}/${{vars.APP_NAME}}
 
   # derived defaults (not inputs)
   EC2_NAME: ${{ inputs.ENV }}-compute
@@ -231,7 +231,7 @@ jobs:
           set -euo pipefail
           ENV="${{ inputs.ENV }}"; REPO="${{ env.ECR_REPO }}"
           URL=$(aws ssm get-parameter \
-            --name "/platform-main/ecr/${ENV}/${REPO}/repository_url" \
+            --name "/platform-main/${ENV}/ecr/${REPO}/repository_url" \
             --query 'Parameter.Value' --output text --region "${AWS_REGION}" 2>/dev/null || true)
           if [ -z "$URL" ] || [ "$URL" = "None" ]; then
             URL=$(aws ecr describe-repositories --repository-names "$REPO" --region "${AWS_REGION}" \
