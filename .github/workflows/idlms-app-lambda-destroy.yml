@@ -73,13 +73,8 @@ jobs:
 
           echo "Looking up RDS instance ${DB_ID} in ${REGION}..."
 
-          # If RDS instance doesn't exist, skip cleanup instead of failing
           set +e
-          aws rds describe-db-instances \
-            --db-instance-identifier "$DB_ID" \
-            --region "$REGION" \
-            --query "DBInstances[0].DBInstanceIdentifier" \
-            --output text >/dev/null 2>&1
+          aws rds describe-db-instances --db-instance-identifier "$DB_ID" --region "$REGION" --query "DBInstances[0].DBInstanceIdentifier" --output text >/dev/null 2>&1
           STATUS=$?
           set -e
 
@@ -88,57 +83,34 @@ jobs:
             exit 0
           fi
 
-          # 1) Find Lambda SG for <env>-idlms-app-lambda
-          echo "Looking up Lambda security group for ${ENV_NAME}-idlms-app-lambda..."
-          LAMBDA_SG_ID="$(
-            aws ec2 describe-security-groups \
-              --region "$REGION" \
-              --filters "Name=group-name,Values=${ENV_NAME}-idlms-app-lambda" \
-              --query "SecurityGroups[0].GroupId" \
-              --output text 2>/dev/null
-          )"
+          echo "Looking up Lambda security group for ${ENV_NAME}-idlms-app-lambda-sg..."
+          LAMBDA_SG_ID="$(aws ec2 describe-security-groups --region "$REGION" --filters "Name=group-name,Values=${ENV_NAME}-idlms-app-lambda-sg" --query "SecurityGroups[0].GroupId" --output text 2>/dev/null)"
 
           if [[ -z "$LAMBDA_SG_ID" || "$LAMBDA_SG_ID" == "None" ]]; then
-            echo "Lambda SG ${ENV_NAME}-idlms-app-lambda not found. Skipping cleanup."
+            echo "Lambda SG ${ENV_NAME}-idlms-app-lambda-sg not found. Skipping cleanup."
             exit 0
           fi
 
           echo "LAMBDA_SG_ID=${LAMBDA_SG_ID}"
 
-          # 2) Get RDS SG id
-          RDS_SG_ID="$(
-            aws rds describe-db-instances \
-              --db-instance-identifier "$DB_ID" \
-              --region "$REGION" \
-              --query "DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId" \
-              --output text
-          )"
+          RDS_SG_ID="$(aws rds describe-db-instances --db-instance-identifier "$DB_ID" --region "$REGION" --query "DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId" --output text)"
 
           echo "RDS_SG_ID=${RDS_SG_ID}"
 
-          # 3) Get ONLY the IpPermissions whose source SG is LAMBDA_SG_ID
           TMP_FILE="$(mktemp)"
           QUERY="SecurityGroups[0].IpPermissions[?UserIdGroupPairs[?GroupId=='${LAMBDA_SG_ID}']]"
 
-          aws ec2 describe-security-groups \
-            --group-ids "$RDS_SG_ID" \
-            --region "$REGION" \
-            --query "$QUERY" > "$TMP_FILE"
+          aws ec2 describe-security-groups --group-ids "$RDS_SG_ID" --region "$REGION" --query "$QUERY" > "$TMP_FILE"
 
-          # If result is [], there are no lambda ingress rules
           if [[ "$(tr -d '[:space:]' < "$TMP_FILE")" == "[]" ]]; then
             echo "No ingress rules from ${LAMBDA_SG_ID} to revoke on ${RDS_SG_ID}"
           else
             echo "Revoking ingress rules from ${LAMBDA_SG_ID} on ${RDS_SG_ID}..."
-            aws ec2 revoke-security-group-ingress \
-              --group-id "$RDS_SG_ID" \
-              --ip-permissions "file://$TMP_FILE" \
-              --region "$REGION" || true
+            aws ec2 revoke-security-group-ingress --group-id "$RDS_SG_ID" --ip-permissions "file://$TMP_FILE" --region "$REGION" || true
           fi
 
           rm -f "$TMP_FILE"
 
-      # 0) Remove Lambda artifact object from S3 (NOT the bucket)
       - name: Delete Lambda artifact object from S3
         shell: bash
         run: |
@@ -150,58 +122,34 @@ jobs:
           echo "Deleting artifact s3://${S3_BUCKET}/${S3_KEY} (if present)..."
           aws s3 rm "s3://${S3_BUCKET}/${S3_KEY}" || echo "Object not found, continue."
 
-      # 1) Destroy REST API -> Lambda routes
       - name: terraform destroy - rest-api-lambda
         working-directory: infra/environments/${{ inputs.ENV }}/lambda-stacks/rest-api-lambda
         shell: bash
         run: |
           set -euo pipefail
-          terraform init -reconfigure \
-            -backend-config="bucket=${TF_BUCKET}" \
-            -backend-config="key=${TF_STATE_PREFIX}/rest-api-lambda/terraform.tfstate" \
-            -backend-config="region=${AWS_REGION}" \
-            -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
-            -backend-config="encrypt=true"
+          terraform init -reconfigure -backend-config="bucket=${TF_BUCKET}" -backend-config="key=${TF_STATE_PREFIX}/rest-api-lambda/terraform.tfstate" -backend-config="region=${AWS_REGION}" -backend-config="dynamodb_table=${TF_LOCK_TABLE}" -backend-config="encrypt=true"
           terraform destroy -auto-approve -var-file="${{ inputs.ENV }}.tfvars"
 
-      # 2) Destroy Lambda itself
       - name: terraform destroy - lambda
         working-directory: infra/environments/${{ inputs.ENV }}/lambda-stacks/lambda
         shell: bash
         run: |
           set -euo pipefail
-          terraform init -reconfigure \
-            -backend-config="bucket=${TF_BUCKET}" \
-            -backend-config="key=${TF_STATE_PREFIX}/lambda/terraform.tfstate" \
-            -backend-config="region=${AWS_REGION}" \
-            -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
-            -backend-config="encrypt=true"
+          terraform init -reconfigure -backend-config="bucket=${TF_BUCKET}" -backend-config="key=${TF_STATE_PREFIX}/lambda/terraform.tfstate" -backend-config="region=${AWS_REGION}" -backend-config="dynamodb_table=${TF_LOCK_TABLE}" -backend-config="encrypt=true"
           terraform destroy -auto-approve -var-file="${{ inputs.ENV }}.tfvars"
 
-      # 3) Destroy CloudWatch alarms/log groups for lambda
       - name: terraform destroy - cloudwatch-lambda
         working-directory: infra/environments/${{ inputs.ENV }}/lambda-stacks/cloudwatch-lambda
         shell: bash
         run: |
           set -euo pipefail
-          terraform init -reconfigure \
-            -backend-config="bucket=${TF_BUCKET}" \
-            -backend-config="key=${TF_STATE_PREFIX}/cloudwatch-lambda/terraform.tfstate" \
-            -backend-config="region=${AWS_REGION}" \
-            -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
-            -backend-config="encrypt=true"
+          terraform init -reconfigure -backend-config="bucket=${TF_BUCKET}" -backend-config="key=${TF_STATE_PREFIX}/cloudwatch-lambda/terraform.tfstate" -backend-config="region=${AWS_REGION}" -backend-config="dynamodb_table=${TF_LOCK_TABLE}" -backend-config="encrypt=true"
           terraform destroy -auto-approve -var-file="${{ inputs.ENV }}.tfvars"
 
-      # 4) Finally destroy SSM .env for lambda
       - name: terraform destroy - ssm-app-lambda-env
         working-directory: infra/environments/${{ inputs.ENV }}/lambda-stacks/ssm-app-lambda-env
         shell: bash
         run: |
           set -euo pipefail
-          terraform init -reconfigure \
-            -backend-config="bucket=${TF_BUCKET}" \
-            -backend-config="key=${TF_STATE_PREFIX}/ssm-app-lambda-env/terraform.tfstate" \
-            -backend-config="region=${AWS_REGION}" \
-            -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
-            -backend-config="encrypt=true"
+          terraform init -reconfigure -backend-config="bucket=${TF_BUCKET}" -backend-config="key=${TF_STATE_PREFIX}/ssm-app-lambda-env/terraform.tfstate" -backend-config="region=${AWS_REGION}" -backend-config="dynamodb_table=${TF_LOCK_TABLE}" -backend-config="encrypt=true"
           terraform destroy -auto-approve -var-file="${{ inputs.ENV }}.tfvars"
