@@ -62,41 +62,6 @@ jobs:
           echo "TF_VAR_lambda_state_bucket=${{ env.TF_BUCKET }}" >> $GITHUB_ENV
           echo "TF_VAR_artifact_bucket=${{ env.ARTIFACT_BUCKET }}" >> $GITHUB_ENV
 
-      - name: Clear RDS security group ingress rules
-        shell: bash
-        run: |
-          set -euo pipefail
-          ENV_NAME="${{ inputs.ENV }}"
-          REGION="${{ env.AWS_REGION }}"
-          DB_ID="${ENV_NAME}-idlms-shared-rds"
-
-          echo "Looking up RDS instance ${DB_ID} in ${REGION}..."
-          set +e
-          aws rds describe-db-instances --db-instance-identifier "$DB_ID" --region "$REGION" --query "DBInstances[0].DBInstanceIdentifier" --output text >/dev/null 2>&1
-          STATUS=$?
-          set -e
-
-          if [[ "$STATUS" -ne 0 ]]; then
-            echo "RDS instance $DB_ID not found. Skipping SG ingress cleanup."
-            exit 0
-          fi
-
-          RDS_SG_ID="$(
-            aws rds describe-db-instances --db-instance-identifier "$DB_ID" --region "$REGION" --query "DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId" --output text
-          )"
-          echo "RDS_SG_ID=$RDS_SG_ID"
-
-          TMP_FILE="$(mktemp)"
-          aws ec2 describe-security-groups --group-ids "$RDS_SG_ID" --region "$REGION" --query "SecurityGroups[0].IpPermissions" > "$TMP_FILE"
-
-          if [[ "$(tr -d '[:space:]' < "$TMP_FILE")" == "[]" ]]; then
-            echo "No ingress rules to revoke on $RDS_SG_ID"
-          else
-            echo "Revoking all ingress rules on $RDS_SG_ID..."
-            aws ec2 revoke-security-group-ingress --group-id "$RDS_SG_ID" --ip-permissions "file://$TMP_FILE" --region "$REGION" || true
-          fi
-          rm -f "$TMP_FILE"
-
       # --- Build Lambda artifact from src/ ---
       - name: Build Lambda zip
         shell: bash
