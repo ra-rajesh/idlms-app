@@ -63,7 +63,7 @@ jobs:
           echo "TF_VAR_lambda_state_bucket=${{ env.TF_BUCKET }}" >> $GITHUB_ENV
           echo "TF_VAR_artifact_bucket=${{ env.ARTIFACT_BUCKET }}" >> $GITHUB_ENV
       
-      - name: Clear RDS security group ingress rules
+      - name: Clear RDS security group ingress from idlms-app-lambda only
         shell: bash
         run: |
           set -euo pipefail
@@ -72,8 +72,14 @@ jobs:
           DB_ID="${ENV_NAME}-idlms-shared-rds"
 
           echo "Looking up RDS instance ${DB_ID} in ${REGION}..."
+
+          # If RDS instance doesn't exist, skip cleanup instead of failing
           set +e
-          aws rds describe-db-instances --db-instance-identifier "$DB_ID" --region "$REGION" --query "DBInstances[0].DBInstanceIdentifier" --output text >/dev/null 2>&1
+          aws rds describe-db-instances \
+            --db-instance-identifier "$DB_ID" \
+            --region "$REGION" \
+            --query "DBInstances[0].DBInstanceIdentifier" \
+            --output text >/dev/null 2>&1
           STATUS=$?
           set -e
 
@@ -82,20 +88,54 @@ jobs:
             exit 0
           fi
 
-          RDS_SG_ID="$(
-            aws rds describe-db-instances --db-instance-identifier "$DB_ID" --region "$REGION" --query "DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId" --output text
+          # 1) Find Lambda SG for <env>-idlms-app-lambda
+          echo "Looking up Lambda security group for ${ENV_NAME}-idlms-app-lambda..."
+          LAMBDA_SG_ID="$(
+            aws ec2 describe-security-groups \
+              --region "$REGION" \
+              --filters "Name=group-name,Values=${ENV_NAME}-idlms-app-lambda" \
+              --query "SecurityGroups[0].GroupId" \
+              --output text 2>/dev/null
           )"
-          echo "RDS_SG_ID=$RDS_SG_ID"
 
-          TMP_FILE="$(mktemp)"
-          aws ec2 describe-security-groups --group-ids "$RDS_SG_ID" --region "$REGION" --query "SecurityGroups[0].IpPermissions" > "$TMP_FILE"
-
-          if [[ "$(tr -d '[:space:]' < "$TMP_FILE")" == "[]" ]]; then
-            echo "No ingress rules to revoke on $RDS_SG_ID"
-          else
-            echo "Revoking all ingress rules on $RDS_SG_ID..."
-            aws ec2 revoke-security-group-ingress --group-id "$RDS_SG_ID" --ip-permissions "file://$TMP_FILE" --region "$REGION" || true
+          if [[ -z "$LAMBDA_SG_ID" || "$LAMBDA_SG_ID" == "None" ]]; then
+            echo "Lambda SG ${ENV_NAME}-idlms-app-lambda not found. Skipping cleanup."
+            exit 0
           fi
+
+          echo "LAMBDA_SG_ID=${LAMBDA_SG_ID}"
+
+          # 2) Get RDS SG id
+          RDS_SG_ID="$(
+            aws rds describe-db-instances \
+              --db-instance-identifier "$DB_ID" \
+              --region "$REGION" \
+              --query "DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId" \
+              --output text
+          )"
+
+          echo "RDS_SG_ID=${RDS_SG_ID}"
+
+          # 3) Get ONLY the IpPermissions whose source SG is LAMBDA_SG_ID
+          TMP_FILE="$(mktemp)"
+          QUERY="SecurityGroups[0].IpPermissions[?UserIdGroupPairs[?GroupId=='${LAMBDA_SG_ID}']]"
+
+          aws ec2 describe-security-groups \
+            --group-ids "$RDS_SG_ID" \
+            --region "$REGION" \
+            --query "$QUERY" > "$TMP_FILE"
+
+          # If result is [], there are no lambda ingress rules
+          if [[ "$(tr -d '[:space:]' < "$TMP_FILE")" == "[]" ]]; then
+            echo "No ingress rules from ${LAMBDA_SG_ID} to revoke on ${RDS_SG_ID}"
+          else
+            echo "Revoking ingress rules from ${LAMBDA_SG_ID} on ${RDS_SG_ID}..."
+            aws ec2 revoke-security-group-ingress \
+              --group-id "$RDS_SG_ID" \
+              --ip-permissions "file://$TMP_FILE" \
+              --region "$REGION" || true
+          fi
+
           rm -f "$TMP_FILE"
 
       # 0) Remove Lambda artifact object from S3 (NOT the bucket)
